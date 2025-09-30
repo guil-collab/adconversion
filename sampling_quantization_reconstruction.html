@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Frecuencia de muestreo, cuantización y reconstrucción — Animaciones didácticas</title>
+<style>
+  :root{
+    --bg:#0b0f14;--card:#111822;--ink:#e7f0ff;--muted:#a8c1ff88;--accent:#7aa2ff;--ok:#5bd38f;--warn:#ffd166;--bad:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.35}
+  header{padding:20px 16px;text-align:center;border-bottom:1px solid #1b2533}
+  header h1{margin:0;font-size:clamp(20px,3vw,28px)}
+  header p{margin:.35rem 0 0;color:#c6d6ff99}
+  main{display:grid;gap:18px;padding:18px;grid-template-columns:1fr;max-width:1200px;margin:0 auto}
+  section.card{background:var(--card);border:1px solid #1b2533;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.22);overflow:hidden}
+  .card header{border:none;text-align:left;background:linear-gradient(180deg,#0e1622,#0b111a);padding:14px 16px}
+  .card header h2{margin:0;font-size:18px}
+  .card header p{margin:.4rem 0 0;color:#c6d6ff80}
+  .row{display:grid;gap:14px;padding:14px;grid-template-columns:1fr}
+  .controls{display:flex;flex-wrap:wrap;gap:10px}
+  .controls .ctl{background:#0e1520;border:1px solid #1b2533;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:10px}
+  .controls label{font-size:13px;opacity:.9;white-space:nowrap}
+  input[type="range"]{accent-color:var(--accent)}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#0f1928;border:1px solid #21324a;font-size:12px}
+  .pill.ok{border-color:#214936;color:var(--ok);background:#0f1f17}
+  .pill.warn{border-color:#4a4021;color:var(--warn);background:#1f1a0f}
+  .pill.bad{border-color:#4a2121;color:var(--bad);background:#1f0f0f}
+  .btn{cursor:pointer;border:1px solid #2a3954;background:#0f1928;color:var(--ink);padding:8px 12px;border-radius:10px}
+  .btn:hover{background:#122136}
+  canvas{width:100%;height:260px;background:#0a111a;border:1px solid #132033;border-radius:12px}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:#c6d6ff90}
+  .swatch{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:6px}
+  .swatch.cont{background:#9ad1ff}
+  .swatch.samp{background:#ffd166}
+  .swatch.recon{background:#5bd38f}
+  .swatch.quant{background:#ff9e9e}
+  .grid-note{font-size:12px;color:#c6d6ff66}
+  select{background:#0f1928;color:var(--ink);border:1px solid #2a3954;border-radius:10px;padding:8px 12px}
+  @media (min-width:900px){ .row.grid-2{grid-template-columns:1fr 1fr} }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sampling, Quantization & Reconstruction — Animaciones</h1>
+  <p>Explora muestreo, aliasing, cuantización por bits (con dither) y reconstrucción ZOH vs interpolación.</p>
+</header>
+
+<main>
+
+  <section class="card" id="scene1">
+    <header><h2>1) Señal continua vs señal muestreada</h2><p>Senoide de frecuencia f y muestras a f_s. Conexión lineal como reconstrucción simple.</p></header>
+    <div class="row">
+      <div class="controls">
+        <div class="ctl"><label>f (Hz)</label><input type="range" id="s1_f" min="50" max="4000" step="10" value="1000"><span class="pill" id="s1_f_val">1000 Hz</span></div>
+        <div class="ctl"><label>f_s (Hz)</label><input type="range" id="s1_fs" min="2000" max="96000" step="100" value="44100"><span class="pill" id="s1_fs_val">44100 Hz</span></div>
+      </div>
+      <canvas id="s1_canvas" width="1000" height="260"></canvas>
+    </div>
+  </section>
+
+</main>
+
+<script>
+function drawGrid(ctx, w, h, xDiv=10, yDiv=4){
+  ctx.save(); ctx.strokeStyle = '#183048'; ctx.lineWidth = 1; ctx.beginPath();
+  for(let i=1;i<xDiv;i++){ const x=(i/xDiv)*w; ctx.moveTo(x,0); ctx.lineTo(x,h); }
+  for(let j=1;j<yDiv;j++){ const y=(j/yDiv)*h; ctx.moveTo(0,y); ctx.lineTo(w,y); }
+  ctx.stroke(); ctx.restore();
+}
+function toScreen(x,y,w,h,xmin,xmax,ymin=-1,ymax=1){
+  const sx=(x-xmin)/(xmax-xmin)*w, sy=h-((y-ymin)/(ymax-ymin)*h); return [sx,sy];
+}
+function drawContinuous(ctx,w,h,f,tspan,amp=0.9,color='#9ad1ff'){
+  ctx.save(); ctx.lineWidth=2; ctx.strokeStyle=color;
+  ctx.beginPath(); const N=800;
+  for(let i=0;i<=N;i++){
+    const t=i/N*tspan, y=amp*Math.sin(2*Math.PI*f*t); const [sx,sy]=toScreen(t,y,w,h,0,tspan,-1,1);
+    if(i===0) ctx.moveTo(sx,sy); else ctx.lineTo(sx,sy);
+  } ctx.stroke(); ctx.restore();
+}
+(function(){
+  const canvas=document.getElementById('s1_canvas'); const ctx=canvas.getContext('2d');
+  const fS=document.getElementById('s1_f'), fsS=document.getElementById('s1_fs');
+  const fVal=document.getElementById('s1_f_val'), fsVal=document.getElementById('s1_fs_val');
+  function render(){
+    const w=canvas.width,h=canvas.height,f=+fS.value,fs=+fsS.value;
+    fVal.textContent=`${f} Hz`; fsVal.textContent=`${fs} Hz`;
+    const tspan=7/f;
+    ctx.clearRect(0,0,w,h); drawGrid(ctx,w,h,12,4); drawContinuous(ctx,w,h,f,tspan);
+    const dt=1/fs; const pts=[]; for(let t=0;t<=tspan+1e-9;t+=dt){ pts.push([t,0.9*Math.sin(2*Math.PI*f*t)]); }
+    ctx.save(); ctx.lineWidth=1.8; ctx.strokeStyle='#5bd38f'; ctx.beginPath();
+    pts.forEach(([t,y],i)=>{ const [sx,sy]=toScreen(t,y,w,h,0,tspan,-1,1); if(i===0) ctx.moveTo(sx,sy); else ctx.lineTo(sx,sy);}); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.fillStyle='#ffd166'; pts.forEach(([t,y])=>{ const [sx,sy]=toScreen(t,y,w,h,0,tspan,-1,1); ctx.beginPath(); ctx.arc(sx,sy,3,0,Math.PI*2); ctx.fill();}); ctx.restore();
+  }
+  fS.addEventListener('input',render); fsS.addEventListener('input',render); render();
+})();
+</script>
+</body>
+</html>
